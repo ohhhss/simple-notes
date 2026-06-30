@@ -1,0 +1,95 @@
+{
+  "name": "simple-notes",
+  "version": "1.0.0",
+  "description": "简单笔记 - 跨平台桌面笔记应用",
+  "main": "./out/main/index.js",
+  "author": "Simple Notes",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p src/renderer/tsconfig.json",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test": "npm run test:unit && npm run build && npm run test:e2e",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "marked": "^12.0.0",
+    "highlight.js": "^11.9.0",
+    "docx": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.12",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.0",
+    "@testing-library/jest-dom": "^6.6.0",
+    "jsdom": "^25.0.0",
+    "@playwright/test": "^1.49.0",
+    "cross-env": "^7.0.3"
+  },
+  "build": {
+    "appId": "com.simplenotes.app",
+    "productName": "简单笔记",
+    "directories": {
+      "output": "release/${version}",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "build/icons/**"
+    ],
+    "icon": "build/icons/icon.png",
+    "win": {
+      "icon": "build/icons/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "mac": {
+      "icon": "build/icons/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "icon": "build/icons/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ],
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>马克笔记</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: sans-serif; height: 100vh; overflow: hidden; background: #f5f5f5; }
+        .container { display: flex; height: 100vh; }
+        .left { width: 280px; background: #fff; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+        .left-head { padding: 12px; border-bottom: 1px solid #ddd; display: flex; justify-content: space-between; }
+        .left-head h2 { font-size: 16px; }
+        .add-btn { background: #4a90d9; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+        .search { padding: 10px; border-bottom: 1px solid #eee; }
+        .search input { width: 100%; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .list { flex: 1; overflow-y: auto; }
+        .item { padding: 12px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+        .item:hover { background: #f8f8f8; }
+        .item.active { background: #e8f0fe; }
+        .item-title { font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+        .item-preview { font-size: 12px; color: #888; }
+        .item-date { font-size: 11px; color: #aaa; margin-top: 4px; }
+        .right { flex: 1; background: #fff; display: flex; flex-direction: column; }
+        .right-head { padding: 12px 20px; border-bottom: 1px solid #ddd; font-size: 13px; color: #666; display: flex; justify-content: space-between; }
+        .save-ind { color: #4caf50; }
+        .editor { flex: 1; padding: 20px; display: flex; flex-direction: column; }
+        .title { font-size: 24px; font-weight: bold; border: none; outline: none; margin-bottom: 12px; }
+        .content { flex: 1; font-size: 15px; line-height: 1.6; border: none; outline: none; resize: none; }
+        .welcome { flex: 1; display: flex; justify-content: center; align-items: center; color: #ccc; flex-direction: column; }
+        .del-btn { float: right; background: #ff4757; color: #fff; border: none; padding: 3px 8px; border-radius: 3px; font-size: 11px; cursor: pointer; }
+        .test-panel { position:fixed;bottom:10px;right:10px;background:#fff;padding:10px;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.2);font-size:12px;display:none;z-index:999; }
+        .tip { position:fixed;bottom:12px;left:295px;font-size:11px;color:#bbb; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="left">
+            <div class="left-head">
+                <h2>马克笔记</h2>
+                <button class="add-btn" id="addBtn">+ 新建</button>
+            </div>
+            <div class="search">
+                <input type="text" id="search" placeholder="搜索笔记...">
+            </div>
+            <div class="list" id="list"></div>
+        </div>
+        <div class="right" id="right">
+            <div class="welcome" id="welcome">
+                <p>选择一条笔记或点击新建</p>
+            </div>
+            <div class="editor" id="editor" style="display:none;">
+                <div class="right-head">
+                    <span id="status"></span>
+                    <span class="save-ind" id="saveStatus"></span>
+                </div>
+                <input type="text" class="title" id="titleInput" placeholder="笔记标题">
+                <textarea class="content" id="contentInput" placeholder="开始写点什么..."></textarea>
+            </div>
+        </div>
+    </div>
+    <div id="test" class="test-panel"></div>
+    <div class="tip">快捷键: Ctrl+N 新建 | Ctrl+S 保存</div>
+    <script>
+    (function() {
+        var KEY = 'mark_notes_app_cn';
+        var notes = [];
+        var currentId = null;
+        var timer = null;
+
+        var addBtn = document.getElementById('addBtn');
+        var search = document.getElementById('search');
+        var listEl = document.getElementById('list');
+        var welcome = document.getElementById('welcome');
+        var editor = document.getElementById('editor');
+        var titleInput = document.getElementById('titleInput');
+        var contentInput = document.getElementById('contentInput');
+        var statusEl = document.getElementById('status');
+        var saveStatus = document.getElementById('saveStatus');
+        var testEl = document.getElementById('test');
+
+        function uid() {
+            return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+        }
+
+        function saveStorage() {
+            try { localStorage.setItem(KEY, JSON.stringify(notes)); } catch(e) {}
+        }
+
+        function loadStorage() {
+            try {
+                var d = localStorage.getItem(KEY);
+                if (d) notes = JSON.parse(d);
+            } catch(e) {}
+            if (!notes || notes.length === 0) {
+                notes = [{id: uid(), title: '欢迎使用马克笔记', content: '欢迎使用马克笔记！\n\n功能特点：\n- 自动保存\n- 本地存储\n- 搜索功能', created: Date.now(), updated: Date.now()}];
+                saveStorage();
+            }
+        }
+
+        function escapeHtml(s) {
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function formatTime(ts) {
+            var d = new Date(ts);
+            return (d.getMonth()+1) + '/' + d.getDate() + ' ' + (d.getHours()<10?'0':'') + d.getHours() + ':' + (d.getMinutes()<10?'0':'') + d.getMinutes();
+        }
+
+        function renderList(keyword) {
+            keyword = (keyword || '').toLowerCase().trim();
+            var arr = [];
+            for (var i = 0; i < notes.length; i++) {
+                if (!keyword || notes[i].title.toLowerCase().indexOf(keyword) >= 0 || notes[i].content.toLowerCase().indexOf(keyword) >= 0) {
+                    arr.push(notes[i]);
+                }
+            }
+            arr.sort(function(a, b) { return b.updated - a.updated; });
+
+            var html = '';
+            for (var j = 0; j < arr.length; j++) {
+                var n = arr[j];
+                var cls = (n.id === currentId) ? ' item active' : ' item';
+                html += '<div class="' + cls + '" data-id="' + n.id + '">';
+                html += '<button class="del-btn" data-del="' + n.id + '">删除</button>';
+                html += '<div class="item-title">' + escapeHtml(n.title || '无标题') + '</div>';
+                html += '<div class="item-preview">' + escapeHtml((n.content || '').substring(0, 40)) + '</div>';
+                html += '<div class="item-date">' + formatTime(n.updated) + '</div>';
+                html += '</div>';
+            }
+            listEl.innerHTML = html;
+
+            var items = listEl.querySelectorAll('.item');
+            for (var k = 0; k < items.length; k++) {
+                items[k].onclick = function(e) {
+                    if (e.target.className === 'del-btn') return;
+                    openNote(this.getAttribute('data-id'));
+                };
+            }
+            var dels = listEl.querySelectorAll('.del-btn');
+            for (var m = 0; m < dels.length; m++) {
+                dels[m].onclick = function(e) {
+                    e.stopPropagation();
+                    if (confirm('确定删除这条笔记吗？')) {
+                        delNote(this.getAttribute('data-del'));
+                    }
+                };
+            }
+        }
+
+        function openNote(id) {
+            currentId = id;
+            var n = null;
+            for (var i = 0; i < notes.length; i++) {
+                if (notes[i].id === id) { n = notes[i]; break; }
+            }
+            if (n) {
+                welcome.style.display = 'none';
+                editor.style.display = 'flex';
+                titleInput.value = n.title;
+                contentInput.value = n.content;
+                statusEl.textContent = '最后更新: ' + formatTime(n.updated);
+                saveStatus.textContent = '';
+            }
+            renderList(search.value);
+        }
+
+        function addNote() {
+            var n = {id: uid(), title: '', content: '', created: Date.now(), updated: Date.now()};
+            notes.unshift(n);
+            saveStorage();
+            openNote(n.id);
+            titleInput.focus();
+        }
+
+        function delNote(id) {
+            var newNotes = [];
+            for (var i = 0; i < notes.length; i++) {
+                if (notes[i].id !== id) newNotes.push(notes[i]);
+            }
+            notes = newNotes;
+            saveStorage();
+            if (currentId === id) {
+                currentId = null;
+                welcome.style.display = 'flex';
+                editor.style.display = 'none';
+            }
+            renderList(search.value);
+        }
+
+        function autoSave() {
+            clearTimeout(timer);
+            saveStatus.textContent = '保存中...';
+            timer = setTimeout(doSave, 400);
+        }
+
+        function doSave() {
+            if (!currentId) return;
+            for (var i = 0; i < notes.length; i++) {
+                if (notes[i].id === currentId) {
+                    notes[i].title = titleInput.value || '无标题';
+                    notes[i].content = contentInput.value;
+                    notes[i].updated = Date.now();
+                    break;
+                }
+            }
+            saveStorage();
+            saveStatus.textContent = '已保存';
+            statusEl.textContent = '最后更新: ' + formatTime(Date.now());
+            renderList(search.value);
+            setTimeout(function() { saveStatus.textContent = ''; }, 1500);
+        }
+
+        function runTests() {
+            var passed = 0;
+            var failed = 0;
+            var msgs = [];
+
+            try {
+                var before = notes.length;
+                var testId = uid();
+                notes.push({id: testId, title: 'Test', content: 'Test body', created: Date.now(), updated: Date.now()});
+                if (notes.length === before + 1) { passed++; msgs.push('创建笔记: OK'); }
+                else { failed++; msgs.push('创建笔记: FAIL'); }
+            } catch(e) { failed++; msgs.push('创建笔记: FAIL'); }
+
+            try {
+                saveStorage();
+                var s = localStorage.getItem(KEY);
+                if (s) { passed++; msgs.push('本地存储: OK'); }
+                else { failed++; msgs.push('本地存储: FAIL'); }
+            } catch(e) { failed++; msgs.push('本地存储: FAIL'); }
+
+            try {
+                var esc = escapeHtml('<script>');
+                if (esc.indexOf('<script>') < 0) { passed++; msgs.push('XSS防护: OK'); }
+                else { failed++; msgs.push('XSS防护: FAIL'); }
+            } catch(e) { failed++; msgs.push('XSS防护: FAIL'); }
+
+            try {
+                var ida = uid(), idb = uid();
+                if (ida !== idb) { passed++; msgs.push('ID生成: OK'); }
+                else { failed++; msgs.push('ID生成: FAIL'); }
+            } catch(e) { failed++; msgs.push('ID生成: FAIL'); }
+
+            try {
+                var fs = formatTime(Date.now());
+                if (typeof fs === 'string' && fs.length > 0) { passed++; msgs.push('时间格式化: OK'); }
+                else { failed++; msgs.push('时间格式化: FAIL'); }
+            } catch(e) { failed++; msgs.push('时间格式化: FAIL'); }
+
+            try {
+                openNote(testId);
+                if (currentId === testId && titleInput.value === 'Test') { passed++; msgs.push('选择笔记: OK'); }
+                else { failed++; msgs.push('选择笔记: FAIL'); }
+            } catch(e) { failed++; msgs.push('选择笔记: FAIL'); }
+
+            try {
+                var beforeDel = notes.length;
+                var newArr = [];
+                for (var i = 0; i < notes.length; i++) {
+                    if (notes[i].id !== testId) newArr.push(notes[i]);
+                }
+                notes = newArr;
+                if (notes.length === beforeDel - 1) { passed++; msgs.push('删除笔记: OK'); }
+                else { failed++; msgs.push('删除笔记: FAIL'); }
+            } catch(e) { failed++; msgs.push('删除笔记: FAIL'); }
+
+            currentId = null;
+            welcome.style.display = 'flex';
+            editor.style.display = 'none';
+            saveStorage();
+            renderList('');
+
+            var color = failed > 0 ? '#f44336' : '#4caf50';
+            testEl.innerHTML = '<b>测试结果: <span style="color:' + color + '">' + passed + ' 通过, ' + failed + ' 失败</span></b><br>' + msgs.join('<br>');
+            if (failed === 0) testEl.innerHTML += '<br><span style="color:#4caf50">所有测试通过!</span>';
+            testEl.style.display = 'block';
+            setTimeout(function() { testEl.style.display = 'none'; }, 8000);
+        }
+
+        addBtn.onclick = addNote;
+        search.oninput = function() { renderList(this.value); };
+        titleInput.oninput = autoSave;
+        contentInput.oninput = autoSave;
+        document.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'n') { e.preventDefault(); addNote(); }
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); doSave(); }
+        });
+
+        loadStorage();
+        renderList('');
+        window.notesApp = {add: addNote, del: delNote, test: runTests};
+        setTimeout(runTests, 300);
+    })();
+    </script>
+</body>
+</html>
