@@ -18,7 +18,7 @@
 
 <br>
 
-![简单笔记界面预览](screenshots/jt.png)
+![简单笔记界面预览](screenshots/preview.png)
 
 <br>
 
