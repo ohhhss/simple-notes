@@ -16,10 +16,14 @@ node_modules
 out
 dist
 release
-build
 *.exe
 *.dmg
 *.AppImage
+
+# Build resources (keep icons)
+!build/
+build/*
+!build/icons/
 
 # Testing
 coverage

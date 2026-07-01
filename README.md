@@ -31,6 +31,23 @@
 | docx + mammoth | Word 文档导入导出 |
 | Vitest + Playwright | 单元测试与 E2E 测试 |
 
+## 下载安装
+
+前往 [GitHub Releases](https://github.com/ohhhss/simple-notes/releases) 页面下载最新版本：
+
+| 文件 | 说明 |
+|------|------|
+| `简单笔记-x.x.x-win-x64.exe` | Windows 一键安装包（推荐普通用户下载） |
+| `简单笔记-x.x.x-Portable.exe` | Windows 便携版，免安装，双击即用 |
+| `简单笔记-x.x.x.dmg` | macOS 安装镜像 |
+| `简单笔记-x.x.x.AppImage` | Linux 便携包 |
+
+**用户使用方式：**
+- **普通用户**：下载 `win-x64.exe` 安装包，双击一键安装，自动创建桌面快捷方式
+- **便携使用**：下载 `Portable.exe`，无需安装，放到 U 盘或任意位置双击即可运行
+- **macOS 用户**：下载 `.dmg` 文件，打开后拖拽到应用程序文件夹
+- **Linux 用户**：下载 `.AppImage` 文件，添加执行权限后双击运行
+
 ## 快速开始
 
 ### 环境要求
