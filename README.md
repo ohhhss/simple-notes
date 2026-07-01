@@ -18,7 +18,7 @@
 
 <br>
 
-![简单笔记界面预览](screenshots/preview.png)
+<img src="screenshots/preview.png" alt="简单笔记界面预览" width="100%">
 
 <br>
 
