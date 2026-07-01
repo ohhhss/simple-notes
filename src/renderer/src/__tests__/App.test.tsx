@@ -18,14 +18,14 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByTestId('welcome')).toBeInTheDocument()
     })
-    expect(screen.getByText('选择一条笔记或点击新建开始记录')).toBeInTheDocument()
+    expect(screen.getByText(/新建笔记，或使用/)).toBeInTheDocument()
   })
 
   it('creates a new note when clicking add button', async () => {
     const user = userEvent.setup()
     render(<App />)
     await waitFor(() => expect(screen.getByTestId('welcome')).toBeInTheDocument())
-    await user.click(screen.getByText('+ 新建'))
+    await user.click(screen.getByText('＋ 新建笔记'))
     expect(screen.getByTestId('title-input')).toBeInTheDocument()
     expect(screen.getByTestId('content-input')).toBeInTheDocument()
     expect(screen.getByTestId('markdown-preview')).toBeInTheDocument()

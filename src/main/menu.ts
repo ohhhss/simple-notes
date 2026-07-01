@@ -1,4 +1,5 @@
 import { Menu, dialog, BrowserWindow, app } from 'electron'
+import { IPC_CHANNELS } from '../shared/ipc-channels'
 
 export function buildApplicationMenu(getMainWindow: () => BrowserWindow | null): void {
   const isMac = process.platform === 'darwin'
@@ -16,23 +17,44 @@ export function buildApplicationMenu(getMainWindow: () => BrowserWindow | null):
         {
           label: '新建笔记',
           accelerator: 'CmdOrCtrl+N',
-          click: () => sendToRenderer('menu:new-note')
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_NEW_NOTE)
+        },
+        { type: 'separator' },
+        {
+          label: '打开文件...',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_OPEN_FILE)
+        },
+        { type: 'separator' },
+        {
+          label: '保存笔记',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_SAVE)
         },
         { type: 'separator' },
         {
           label: '导出为 Markdown',
           accelerator: 'CmdOrCtrl+Shift+M',
-          click: () => sendToRenderer('menu:export', 'md')
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_EXPORT, 'md')
         },
         {
           label: '导出为纯文本',
           accelerator: 'CmdOrCtrl+Shift+T',
-          click: () => sendToRenderer('menu:export', 'txt')
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_EXPORT, 'txt')
         },
         {
           label: '导出为 Word 文档',
           accelerator: 'CmdOrCtrl+Shift+W',
-          click: () => sendToRenderer('menu:export', 'docx')
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_EXPORT, 'docx')
+        },
+        { type: 'separator' },
+        {
+          label: '导出备份...',
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_EXPORT_CONFIG)
+        },
+        {
+          label: '导入备份...',
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_IMPORT_CONFIG)
         },
         { type: 'separator' },
         isMac
@@ -56,9 +78,30 @@ export function buildApplicationMenu(getMainWindow: () => BrowserWindow | null):
       label: '视图',
       submenu: [
         {
+          label: '分屏模式',
+          accelerator: 'CmdOrCtrl+Alt+S',
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_VIEWMODE, 'split')
+        },
+        {
+          label: '仅编辑模式',
+          accelerator: 'CmdOrCtrl+Alt+E',
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_VIEWMODE, 'edit')
+        },
+        {
+          label: '仅预览模式',
+          accelerator: 'CmdOrCtrl+Alt+P',
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_VIEWMODE, 'preview')
+        },
+        { type: 'separator' },
+        {
           label: '切换昼夜主题',
           accelerator: 'CmdOrCtrl+Shift+L',
-          click: () => sendToRenderer('menu:toggle-theme')
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_TOGGLE_THEME)
+        },
+        {
+          label: '全局搜索',
+          accelerator: 'CmdOrCtrl+Shift+F',
+          click: () => sendToRenderer(IPC_CHANNELS.MENU_SEARCH)
         },
         { type: 'separator' },
         { role: 'reload', label: '重新加载' },
@@ -82,7 +125,7 @@ export function buildApplicationMenu(getMainWindow: () => BrowserWindow | null):
               type: 'info',
               title: '关于简单笔记',
               message: '简单笔记',
-              detail: `版本: ${app.getVersion()}\n一个简洁的本地 Markdown 笔记应用\n基于 Electron + React + TypeScript\n支持实时预览、昼夜主题、多格式导出`
+              detail: `版本: ${app.getVersion()}\n一个简洁的本地 Markdown 笔记应用\n基于 Electron + React + TypeScript\n支持实时预览、昼夜主题、分类管理、多格式导入导出\n\n开发者: ohhhss\nGitHub: https://github.com/ohhhss`
             })
           }
         }

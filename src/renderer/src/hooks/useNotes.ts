@@ -1,219 +1,252 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Note } from '@shared/types'
-import { uid } from '../utils/formatTime'
+import type { Note, Category } from '../../../shared/types'
+import { DEFAULT_CATEGORY_ID, TRASH_RETENTION_DAYS } from '../../../shared/types'
 
-const DEFAULT_NOTES: Note[] = [
-  {
-    id: uid(),
-    title: '欢迎使用简单笔记',
-    content: `# 欢迎使用简单笔记！
-
-这是一个支持 **Markdown** 的轻量级本地笔记应用。
-
-## 功能特点
-
-- 实时 Markdown 预览
-- 编辑区语法高亮
-- 昼夜主题一键切换
-- 多格式导出（Markdown / 纯文本 / Word）
-- 自动保存、本地存储
-- 全文搜索
-
-## Markdown 语法示例
-
-### 代码块
-
-\`\`\`javascript
-function hello() {
-  console.log('Hello, Simple Notes!')
-}
-\`\`\`
-
-### 列表
-
-- 无序列表项 1
-- 无序列表项 2
-- 无序列表项 3
-
-1. 有序列表项 1
-2. 有序列表项 2
-3. 有序列表项 3
-
-### 引用
-
-> 这是一段引用文本。
-> 可以用于摘录重要内容。
-
-### 链接与图片
-
-[访问 GitHub](https://github.com)
-
-### 表格
-
-| 功能 | 快捷键 |
-| --- | --- |
-| 新建笔记 | Ctrl+N |
-| 保存 | Ctrl+S |
-| 切换主题 | Ctrl+Shift+L |
-
-### 分割线
-
----
-
-*开始记录你的想法吧！*
-`,
-    created: Date.now(),
-    updated: Date.now()
+// Extract tags from note content: lines or inline #tags (not headings)
+// Returns tags from both explicit tags field AND #tags in content (merged)
+export function extractTagsFromContent(content: string): string[] {
+  const tags = new Set<string>()
+  // Match #tag patterns - not at start of line (those are headings)
+  // Tags: #word where word contains Chinese/English/numbers, preceded by space or start
+  const inlineRegex = /(?:^|\s)#([^\s#.,;:!?，。；：！？、）\)】\]]+)/gm
+  let m
+  while ((m = inlineRegex.exec(content)) !== null) {
+    const tag = m[1].trim()
+    // Skip heading-like patterns (line starting with #)
+    const beforeMatch = content.substring(Math.max(0, m.index - 1), m.index)
+    if (tag && /\S/.test(tag) && tag.length <= 20) {
+      tags.add(tag)
+    }
+    void beforeMatch
   }
-]
-
-export type SaveState = 'idle' | 'saving' | 'saved'
+  return Array.from(tags)
+}
 
 export function useNotes() {
   const [notes, setNotes] = useState<Note[]>([])
-  const [currentId, setCurrentId] = useState<string | null>(null)
-  const [searchKeyword, setSearchKeyword] = useState('')
-  const [saveState, setSaveState] = useState<SaveState>('idle')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [currentNoteId, setCurrentNoteId] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // 初始化加载
+  // Load unified data on mount + clean expired trash
   useEffect(() => {
     ;(async () => {
-      let loadedNotes = await window.notesAPI.loadNotes()
-      if (!loadedNotes || loadedNotes.length === 0) {
-        loadedNotes = DEFAULT_NOTES
-        await window.notesAPI.saveNotes(loadedNotes)
+      const data = await window.notesAPI.loadAppData()
+      // Clean expired trash notes
+      const now = Date.now()
+      const expireThreshold = now - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000
+      const cleanedNotes = data.notes.filter(n => !(n.deletedAt && n.deletedAt < expireThreshold))
+      const hasChanges = cleanedNotes.length !== data.notes.length
+      // Ensure default category exists
+      let cats = data.categories
+      if (!cats.find(c => c.id === DEFAULT_CATEGORY_ID)) {
+        cats = [{ id: DEFAULT_CATEGORY_ID, name: '默认笔记', collapsed: false, created: Date.now() }, ...cats]
       }
-      setNotes(loadedNotes)
+      // Migrate missing tags
+      for (const n of cleanedNotes) {
+        if (!Array.isArray(n.tags)) n.tags = []
+      }
+      setNotes(cleanedNotes)
+      setCategories(cats)
+      if (cleanedNotes.length > 0) {
+        // Select first non-deleted note
+        const firstActive = cleanedNotes.find(n => !n.deletedAt)
+        setCurrentNoteId(firstActive ? firstActive.id : null)
+      }
       setLoaded(true)
+      if (hasChanges) {
+        window.notesAPI.saveAppData({ notes: cleanedNotes, categories: cats })
+      }
     })()
   }, [])
 
-  const persistNotes = useCallback(async (newNotes: Note[]) => {
-    try {
-      await window.notesAPI.saveNotes(newNotes)
-    } catch (e) {
-      console.error('保存笔记失败', e)
-    }
-  }, [])
+  // Persist with debounce using latest state via ref
+  const stateRef = useRef({ notes, categories })
+  useEffect(() => { stateRef.current = { notes, categories } }, [notes, categories])
 
-  const scheduleAutoSave = useCallback((updatedNotes: Note[]) => {
-    setSaveState('saving')
+  const schedulePersist = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    saveTimerRef.current = setTimeout(async () => {
-      await persistNotes(updatedNotes)
-      setSaveState('saved')
-      setTimeout(() => setSaveState('idle'), 1500)
+    saveTimerRef.current = setTimeout(() => {
+      const { notes: n, categories: c } = stateRef.current
+      window.notesAPI.saveAppData({ notes: n, categories: c })
     }, 400)
-  }, [persistNotes])
+  }, [])
 
-  const addNote = useCallback(() => {
-    const newNote: Note = {
-      id: uid(),
-      title: '',
-      content: '',
-      created: Date.now(),
-      updated: Date.now()
-    }
+  // Update notes with persist
+  const updateNotes = useCallback((updater: (prev: Note[]) => Note[]) => {
     setNotes(prev => {
-      const next = [newNote, ...prev]
-      scheduleAutoSave(next)
+      const next = updater(prev)
+      // Defer persist so categories state is fresh too
+      schedulePersist()
       return next
     })
-    setCurrentId(newNote.id)
-    return newNote.id
-  }, [scheduleAutoSave])
+  }, [schedulePersist])
 
-  const deleteNote = useCallback((id: string) => {
-    setNotes(prev => {
-      const next = prev.filter(n => n.id !== id)
-      persistNotes(next)
+  const updateCategories = useCallback((updater: (prev: Category[]) => Category[]) => {
+    setCategories(prev => {
+      const next = updater(prev)
+      schedulePersist()
       return next
     })
-    if (currentId === id) {
-      setCurrentId(null)
-    }
-  }, [currentId, persistNotes])
+  }, [schedulePersist])
 
-  const updateCurrentNote = useCallback((patch: { title?: string; content?: string }) => {
-    if (!currentId) return
-    setNotes(prev => {
-      const next = prev.map(n =>
-        n.id === currentId
-          ? { ...n, ...patch, updated: Date.now() }
-          : n
-      )
-      scheduleAutoSave(next)
-      return next
-    })
-  }, [currentId, scheduleAutoSave])
-
-  const forceSave = useCallback(async () => {
+  // Force persist immediately (for external actions)
+  const persistNow = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
-    await persistNotes(notes)
-    setSaveState('saved')
-    setTimeout(() => setSaveState('idle'), 1500)
-  }, [notes, persistNotes])
-
-  const selectNote = useCallback((id: string | null) => {
-    setCurrentId(id)
+    window.notesAPI.saveAppData({ notes: stateRef.current.notes, categories: stateRef.current.categories })
   }, [])
 
-  // 全局快捷键
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        e.preventDefault()
-        addNote()
-      }
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault()
-        forceSave()
-      }
+  const addNote = useCallback((categoryId: string = DEFAULT_CATEGORY_ID) => {
+    const newNote: Note = {
+      id: `note_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      title: '未命名笔记',
+      content: '',
+      tags: [],
+      created: Date.now(),
+      updated: Date.now(),
+      categoryId
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [addNote, forceSave])
+    updateNotes(prev => [newNote, ...prev])
+    setCurrentNoteId(newNote.id)
+    // Auto-expand the target category
+    updateCategories(prev => prev.map(c => c.id === categoryId ? { ...c, collapsed: false } : c))
+    return newNote
+  }, [updateNotes, updateCategories])
 
-  // 菜单新建笔记事件
-  useEffect(() => {
-    const cleanup = window.notesAPI.onMenuNewNote(() => addNote())
-    return cleanup
-  }, [addNote])
+  const addCategory = useCallback((name: string = '新分类') => {
+    const newCat: Category = {
+      id: `cat_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: name.trim() || '新分类',
+      collapsed: false,
+      created: Date.now()
+    }
+    updateCategories(prev => [...prev, newCat])
+    return newCat
+  }, [updateCategories])
 
-  // 重新加载笔记（供测试使用）
-  const reloadNotes = useCallback(async () => {
-    const loadedNotes = await window.notesAPI.loadNotes()
-    setNotes(loadedNotes)
-  }, [])
+  const deleteCategory = useCallback((id: string) => {
+    if (id === DEFAULT_CATEGORY_ID) return
+    updateCategories(prev => prev.filter(c => c.id !== id))
+    updateNotes(prev => prev.map(n => n.categoryId === id ? { ...n, categoryId: DEFAULT_CATEGORY_ID } : n))
+  }, [updateCategories, updateNotes])
 
-  // 过滤并排序笔记
-  const filteredNotes = notes
-    .filter(n => {
-      const kw = searchKeyword.toLowerCase().trim()
-      if (!kw) return true
-      return n.title.toLowerCase().includes(kw) || n.content.toLowerCase().includes(kw)
+  const renameCategory = useCallback((id: string, name: string) => {
+    if (id === DEFAULT_CATEGORY_ID) return
+    const trimmed = name.trim()
+    if (!trimmed) return
+    updateCategories(prev => prev.map(c => c.id === id ? { ...c, name: trimmed } : c))
+  }, [updateCategories])
+
+  const toggleCategory = useCallback((id: string) => {
+    updateCategories(prev => prev.map(c => c.id === id ? { ...c, collapsed: !c.collapsed } : c))
+  }, [updateCategories])
+
+  const setNoteCategory = useCallback((noteId: string, categoryId: string) => {
+    updateNotes(prev => prev.map(n => n.id === noteId ? { ...n, categoryId, updated: Date.now() } : n))
+  }, [updateNotes])
+
+  const updateNote = useCallback((id: string, updates: Partial<Note>) => {
+    updateNotes(prev => prev.map(note => {
+      if (note.id !== id) return note
+      const merged = { ...note, ...updates, updated: Date.now() }
+      // Merge tags: explicit tags + extracted from content
+      if (updates.content !== undefined || updates.tags !== undefined) {
+        const contentTags = extractTagsFromContent(updates.content !== undefined ? updates.content : note.content)
+        const explicitTags = updates.tags !== undefined ? updates.tags : note.tags
+        const tagSet = new Set<string>([...explicitTags, ...contentTags])
+        merged.tags = Array.from(tagSet)
+      }
+      return merged
+    }))
+  }, [updateNotes])
+
+  const setNoteTags = useCallback((id: string, tags: string[]) => {
+    updateNotes(prev => prev.map(n => {
+      if (n.id !== id) return n
+      const contentTags = extractTagsFromContent(n.content)
+      const tagSet = new Set<string>([...tags, ...contentTags])
+      return { ...n, tags: Array.from(tagSet), updated: Date.now() }
+    }))
+  }, [updateNotes])
+
+  // Move to trash (soft delete)
+  const deleteNote = useCallback((id: string) => {
+    updateNotes(prev => prev.map(n => n.id === id ? { ...n, deletedAt: Date.now() } : n))
+    // Select next available non-deleted note
+    setCurrentNoteId(curr => {
+      if (curr !== id) return curr
+      const rest = stateRef.current.notes.filter(n => n.id !== id && !n.deletedAt)
+      return rest.length > 0 ? rest[0].id : null
     })
-    .sort((a, b) => b.updated - a.updated)
+  }, [updateNotes])
 
-  const currentNote = notes.find(n => n.id === currentId) ?? null
+  // Restore from trash
+  const restoreNote = useCallback((id: string) => {
+    updateNotes(prev => {
+      const note = prev.find(n => n.id === id)
+      if (!note) return prev
+      const { deletedAt: _removed, ...rest } = note
+      void _removed
+      // Ensure category exists; if not, move to default
+      const catExists = stateRef.current.categories.some(c => c.id === note.categoryId)
+      return prev.map(n => n.id === id
+        ? { ...rest, categoryId: catExists ? note.categoryId : DEFAULT_CATEGORY_ID, updated: Date.now() }
+        : n
+      )
+    })
+  }, [updateNotes])
+
+  // Permanently delete
+  const permanentlyDeleteNote = useCallback((id: string) => {
+    updateNotes(prev => prev.filter(n => n.id !== id))
+    setCurrentNoteId(curr => {
+      if (curr !== id) return curr
+      const rest = stateRef.current.notes.filter(n => n.id !== id && !n.deletedAt)
+      return rest.length > 0 ? rest[0].id : null
+    })
+  }, [updateNotes])
+
+  // Empty all trash
+  const emptyTrash = useCallback(() => {
+    updateNotes(prev => prev.filter(n => !n.deletedAt))
+  }, [updateNotes])
+
+  const currentNote = notes.find(n => n.id === currentNoteId) || null
+
+  // Derived data
+  const activeNotes = notes.filter(n => !n.deletedAt)
+  const trashedNotes = notes.filter(n => !!n.deletedAt).sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0))
+
+  // Get all unique tags from active notes
+  const allTags = (() => {
+    const set = new Set<string>()
+    for (const n of activeNotes) {
+      for (const t of n.tags) set.add(t)
+    }
+    return Array.from(set).sort()
+  })()
+
+  // Reload from external data (e.g. after config import)
+  const reloadFromData = useCallback((data: { notes: Note[]; categories: Category[] }) => {
+    const cats = data.categories.find(c => c.id === DEFAULT_CATEGORY_ID)
+      ? data.categories
+      : [{ id: DEFAULT_CATEGORY_ID, name: '默认笔记', collapsed: false, created: Date.now() }, ...data.categories]
+    const ns = data.notes.map(n => ({ ...n, tags: Array.isArray(n.tags) ? n.tags : [] }))
+    setNotes(ns)
+    setCategories(cats)
+    setCurrentNoteId(ns.find(n => !n.deletedAt)?.id ?? null)
+    // Persist immediately
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    window.notesAPI.saveAppData({ notes: ns, categories: cats })
+  }, [])
 
   return {
-    notes,
-    filteredNotes,
-    currentNote,
-    currentId,
-    searchKeyword,
-    setSearchKeyword,
-    saveState,
-    loaded,
-    addNote,
-    deleteNote,
-    updateCurrentNote,
-    selectNote,
-    forceSave,
-    reloadNotes,
-    setNotes
+    notes, categories, currentNoteId, currentNote, loaded,
+    activeNotes, trashedNotes, allTags,
+    setCurrentNoteId,
+    addNote, updateNote, setNoteTags, deleteNote, restoreNote, permanentlyDeleteNote, emptyTrash,
+    addCategory, deleteCategory, renameCategory, toggleCategory, setNoteCategory,
+    persistNow, reloadFromData
   }
 }

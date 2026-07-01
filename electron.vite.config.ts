@@ -30,6 +30,7 @@ export default defineConfig({
     },
     build: {
       outDir: resolve('out/renderer'),
+      emptyOutDir: false,
       rollupOptions: {
         input: resolve('src/renderer/index.html')
       }

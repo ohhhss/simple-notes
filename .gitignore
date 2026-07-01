@@ -54,3 +54,10 @@ test-results
 
 # Trae IDE
 .trae/
+
+# Audit reports (development artifacts)
+desktop-audit-report/
+electron-audit-report/
+
+# Standalone HTML preview
+notes.html
